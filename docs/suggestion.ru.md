@@ -1,63 +1,129 @@
 ## Реализация *type classes* для *FSharp*
-1. Синтаксис объявления 
+#### Синтаксис объявления 
+###### С одним параметром
 ```fsharp
 [<Trait>]
 type Eq<'t>=
-  Equal : 't -> 't -> bool
+  abstract Equal : 't -> 't -> bool
 ```
-3. Синтаксис реализации:
+###### С несколькими параметрами
+```fsharp
+[<Trait>]
+type Mapper<'m, 'a, 'b>=
+  abstract Items : 'a -> 'm -> 'b option
+```
+###### Со связанным типом
+```fsharp
+[<Trait>]
+type Add<[<Linked>]'Result, 'a, 'b>=
+  abstract Sum : 'a -> 'b -> 'Result
+```
+###### С условием и связанным типом
+```fsharp
+[<Trait>]
+type Iterator<[<Linked>] 'item> =
+    abstract Next: unit -> 'item option
+[<Trait>]
+type IntoIterator<'t, [<Linked>] 'item, 'ti when 'ti :> Iterator<'item>> =
+    abstract GetIterator : 't -> 'ti
+```
+#### Синтаксис реализации
+###### С одним параметром
 ```fsharp
 [<Witness>]
-type Eq<int> =
-  implement Eq<'t> with
-    mamber __.Equal a b = a = b
+type EqInt=
+  interface Eq<int> with
+    member __.Equal a b = a = b
 ```
-4. Правила имплиментации трейта:
-Трейт может быть имплементирован в сборке, где:
+
+###### С несколькими параметрами
+```fsharp
+[<Witness>]
+type MapperMap<'a, 'b>=
+  interface Mapper<Map<'a, 'b>, 'a, 'b> with  
+    member __.Items key map = Map.tryFind key map
+```
+
+###### Со связанным типом
+```fsharp
+[<Witness>]
+type AddInt<Result = int>=
+  interface Add<int, int> =  
+    member __.Sum a b = a + b
+```
+###### С условием и связанным типом (full syntax)
+```fsharp
+[<Witness>]
+type IteratorEnumerator<Result = 't>
+    interface Iterator<IEnumerator<'t>> with
+        member __.Next () = if(__.Next()) then __.Current |> Some else None   
+
+[<Witness>]
+type IntoIterator<'t, 'i when 't :> IEnumerable<'i>> =
+    interface IntoIterator<'t, 'item, IteratorEnumerator<'t, Result = 'item>> with
+        member __.GetIterator (en : 't) =  __.GetEnumerator()
+            
+```
+
+###### С условием и связанным типом (short syntax?)
+```fsharp
+[<Witness>]
+type IteratorEnumerator
+    interface Iterator<IEnumerator<'t>, Result = 't> with
+        member __.Next () = if(__.Next()) then __.Current |> Some else None   
+
+[<Witness>]
+type IntoIterator<'t, 'i when 't :> IEnumerable<'i>> =
+    interface IntoIterator<IteratorEnumerator<IEnumerable<'i>, Result = 'i> with
+        member __.GetIterator (en : 't) =  __.GetEnumerator()
+            
+```
+###### С условием и связанным типом
+
+#### Правила имплиментации трейта:
+Трейт может быть имплементирован в сборке, где либо:
 - объявлен трейт
 - объявлен один из типов, над которым имплементируется трейт
-5. Связанные типы трейта.
-Описание трейта может включать описание типа:
+#### Компиляция трейтов:
+
+###### С одним параметром
+Никак, это просто интерфейсы:
 ```fsharp
 [<Trait>]
-type Iterator<'self> =
-  type Item
-  abstract Next : 'self -> Item option
-  
+type Eq<'t>=
+  abstract Equal : 't -> 't -> bool
+```
+###### С несколькими параметрами
+Никак, это просто интерфейсы:
+```fsharp
 [<Trait>]
-type IntoIterator<'self> =
-  type Item
-  toIterator : 'self -> Iteraror<Item = Item> 
+type Mapper<'m, 'a, 'b>=
+  abstract Items : 'a -> 'm -> 'b option
 ```
+###### Со связанным типом
+А вот здесь по другому:
 ```fsharp
-[<Withess>]
-type Iterator<IEnumerator<'t>> =
-  interface Iterator<IEnumerator<'t>, Item = 't> with
-    member __.Next en =  if en.Next() then en.Current |> Some else None
-
-[<Withess>]
-type IntoIterator<List<'t>> =
-  interface IntoItrator<List<'t>, Item = 't> with
-    member __.toIterator lst = IEnumerable.GetEnumerator<'t> lst 
-  
+[<Trait>]
+type Add<'a, 'b,[<LinkedTypeName("Result)>] 'result>=
+  abstract Sum : 'a -> 'b -> 'result
 ```
-
-6. Компиляция трейтов:
-Компилируются в интерфейсы:
+#### Компиляция реализаций:
+Компилируются в структуры:
+###### С одним параметром
 ```fsharp
-type Eq<'self> =
-  abstract Equal : 'self -> 'self -> bool
+[<Implement(typeof<Eq<int>>)>]
+[<Struct>]
+type EqInt=
+  interface Eq<int> with
+    member __.Equal a b = a = b
 ```
+###### С несколькими параметрами
 ```fsharp
-type Iterator<'self, 'item> =
-  abstract Next: 'self -> 'item
-type IntoIterator<'self, 'item , 'iter when 'iter :> Iterator<'iter, 'item>> =
-  
-  abstract toIterator: 'self -> 'iter
+[<Witness>]
+type MapperMap<'a, 'b>=
+  interface Mapper<Map<'a, 'b>, 'a, 'b> with  
+    member __.Items key map = Map.tryFind key map
 ```
-7. Компиляция реализаций:
-Компилируются в структуры или расширения:
-```fsharp
 [<Struct>]
 type EqInt =
   interface Eq<int> with
